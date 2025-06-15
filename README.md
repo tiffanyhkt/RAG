@@ -24,10 +24,6 @@ It extracts context from a PDF, builds a knowledge graph into Neo4j, and provide
 ## Installation
 
 1. **Clone the repository**:
-、、、
-git clone https://github.com/<your-username>/<your-repo>.git
-cd <your-repo>
-、、、
 
 2. **Install dependencies**
 、、、
