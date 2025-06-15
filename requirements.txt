@@ -1,0 +1,9 @@
+langchain_community
+langchain-docling
+neo4j
+langchain-openai
+langchain-core
+openai
+python-dotenv
+langchain_chroma
+rank_bm25
