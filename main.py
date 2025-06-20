@@ -1,12 +1,10 @@
 from RAG import process_single_query
 from knowledge_graph import KnowledgeGraphManager
+from dotenv import load_dotenv
 import os
+from config import neo4j_uri, neo4j_user, neo4j_password
 
-def main():
-    pdf_path = "2401.13649v2.pdf"
-    neo4j_uri = "bolt://localhost:7687"
-    neo4j_user = "neo4j"
-    neo4j_password = "" #DB password
+def main(pdf_path):
 
     kg_manager = KnowledgeGraphManager(
         uri=neo4j_uri,
@@ -24,7 +22,7 @@ def main():
             print("Finished create knowledge graph")
         else:
             print("Please check pdf.")
-            return
+            # return
 
         query = input("User Query: ").strip()
         
@@ -55,4 +53,5 @@ def main():
         kg_manager.close()
 
 if __name__ == "__main__":
-    main() 
+    pdf_path = "2408.09869v5.pdf"
+    main(pdf_path) 

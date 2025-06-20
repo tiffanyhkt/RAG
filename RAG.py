@@ -1,5 +1,5 @@
 from langchain_docling import DoclingLoader
-from langchain.text_splitter import CharacterTextSplitter
+from langchain_docling.loader import ExportType
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -9,12 +9,13 @@ from langchain.schema import Document
 import os
 from datetime import datetime
 from chromadb.config import Settings
+from config import OPENAI_API_KEY
 
 #OpenAI API
-os.environ["OPENAI_API_KEY"] = "" #Filled in key 
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
 #Embedding and llm config
-embeddings = OpenAIEmbeddings()
+embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
 chat_client = ChatOpenAI(
     model_name="gpt-4o",
     temperature=0
@@ -40,38 +41,32 @@ def process_single_query(query, pdf_path):
 
         if vector_store._collection.count() == 0:
             # PDF解析
-            loader = DoclingLoader(file_path=pdf_path)
+            loader = DoclingLoader(
+                file_path=pdf_path,
+                export_type=ExportType.DOC_CHUNKS,
+                                   )
             docs = loader.load()
-            
-            # 分割文本
-            text_splitter = CharacterTextSplitter(
-                separator="\n",
-                chunk_size=1000,
-                chunk_overlap=200,
-                length_function=len,
-                is_separator_regex=False
-            )
             
             all_chunks = []
             for doc in docs:
-                chunks = text_splitter.split_text(doc.page_content)
-                for chunk in chunks:
-                    simple_metadata = {
-                        "source": pdf_path,
-                        "page": getattr(doc.metadata, "page", 1) if hasattr(doc.metadata, "page") else 1
+                chunk = doc.page_content #Finished Docling chunking's chunk content                
+                metadata = {
+                        "source": doc.metadata["source"], #pdf source
+                        "page": doc.metadata["dl_meta"]["doc_items"][0]["prov"][0]["page_no"] #page no
                     }
-                    all_chunks.append({
-                        "content": chunk,
-                        "metadata": simple_metadata
+                all_chunks.append({
+                    "content": chunk,
+                    "metadata": metadata
                     })
             
+            #Run more texts through the embeddings and add to the vectorstore (texts, metadatas)
             vector_store.add_texts(
                 texts=[chunk["content"] for chunk in all_chunks],
                 metadatas=[chunk["metadata"] for chunk in all_chunks]
             )
-            print(f"Added {len(all_chunks)} chunks")
+            print(f"Total added {len(all_chunks)} chunks")
         else:
-            print("Used existing vectors")
+            print("Indexed before, using existing vectors")
 
         retriever_mmr = vector_store.as_retriever(
             search_type="mmr",
@@ -108,19 +103,24 @@ def process_single_query(query, pdf_path):
         response = chat_client.invoke([
             {
                 "role": "system",
-                "content": f'''You are a chatbot designed to assist users based on the provided context. Please answer their questions accordingly.
+                "content": f'''You are an intelligent assistant operating in a Retrieval-Augmented Generation (RAG) setting. 
+                Your task is to answer user queries strictly based on the provided context from the SELECTED FILES.
                 '''},
             {
                 "role": "system",
-                "content": f'''Instructions:
-                1. Don't use your own knowledge. Use the content of the SELECTED FILES to answer the user.
-                2. If the content of the SELECTED FILES is not enough, please tell the user you cannot find any relevant information from the source and try to answer from your perspective in the tone of an assistant.
-                3. If user's intention is vague, you should ask for clarification.
-                4. You should always reply in the most recent language user used.
-                Current time:{current_time}'''},
+                "content": f'''
+                Guidelines:
+                1. Use only the information retrieved from the SELECTED FILES. Do not rely on your own prior knowledge or external information.
+                2. If the provided content does not contain sufficient information to answer the question, politely inform the user that no relevant information was found in the source. 
+                Then, you may offer a general answer from your own perspective, clearly indicating it is outside the source.
+                3. If the user's request is unclear or ambiguous, ask for clarification before answering.
+                4. Always reply in the same language the user used most recently.
+                5. Ensure that your responses are concise, accurate, and grounded in the retrieved content.
+                
+                Current timestamp:{current_time}'''},
             {
                 "role": "system",
-                "content": f'''Content of the SELECTED FILES: {contexts}'''},
+                "content": f'''Retrieved Context (SELECTED FILES):\n {contexts}'''},
             {
                 "role": "user", 
                 "content": query
@@ -130,7 +130,7 @@ def process_single_query(query, pdf_path):
         return {
             "type": "answer",
             "content": response.content,
-            "contexts": contexts
+            "Referenced contexts": contexts
         }
         
     except Exception as e:
@@ -139,6 +139,7 @@ def process_single_query(query, pdf_path):
 
 
 if __name__ == "__main__":
-    query = "What is the overall success rate of Human Performance on VisualWebArena?"
-    pdf_path = "2401.13649v2.pdf"
+    query = "Does Docling contain OCR?"
+    pdf_path = "2408.09869v5.pdf"
     result = process_single_query(query, pdf_path)
+    print(result['content'])
