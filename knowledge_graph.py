@@ -7,7 +7,7 @@ import json
 
 class KnowledgeGraphManager:
     def __init__(self, uri: str, user: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        self.driver = GraphDatabase.driver(uri, auth=(user, password)) #Neo4j driver 連線 
         self.llm = ChatOpenAI(
             model_name="gpt-4o",
             temperature=0
@@ -18,19 +18,19 @@ class KnowledgeGraphManager:
 
     def create_constraints(self):
         with self.driver.session() as session:
-            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (n:Concept) REQUIRE n.name IS UNIQUE")
-            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE")
+            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (n:Concept) REQUIRE n.name IS UNIQUE") #Concept 節點，name是唯一
+            session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE") #Document 節點，id是唯一 (避免 PDF 重複插入)
 
     def create_knowledge_graph(self, chunks: List[Dict]):
         print("Creating knowledge graph")
         
         with self.driver.session() as session:
-            session.run("MATCH (n) DETACH DELETE n")
+            session.run("MATCH (n) DETACH DELETE n") #清空 DB 節點-> init graph
         
         for i, chunk in enumerate(chunks):
             try:
                 print(f"Working on the {i+1} chunk")
-                entities_relations = self._extract_entities_relations(chunk["content"])
+                entities_relations = self._extract_entities_relations(chunk["content"]) #input 的每個 chunk 提取實體&關係
                 print(f"Extracted entity and relations：{json.dumps(entities_relations, ensure_ascii=False, indent=2)}")
                 
                 if not entities_relations.get("entities") and not entities_relations.get("relations"):
@@ -38,8 +38,10 @@ class KnowledgeGraphManager:
                     continue
                 
                 with self.driver.session() as session:
+                    #Entity 寫入 neo4j
                     for entity in entities_relations.get("entities", []):
                         try:
+                            #MERGE 會先檢查是否已存在Concept，若無則建立 (Neo4j 的 UPSERT)
                             query = """
                                 MERGE (c:Concept {name: $name})
                                 RETURN c
@@ -53,6 +55,8 @@ class KnowledgeGraphManager:
                             print(f"Entity creation error：{str(e)}")
                             continue
                     
+                    #Relations 寫入 neo4j
+                    #match c1 & c2 entity 節點
                     for relation in entities_relations.get("relations", []):
                         try:
                             query = """
@@ -90,6 +94,7 @@ class KnowledgeGraphManager:
             if relation_count == 0:
                 print("No relations")
 
+    #提取實體 & 關係
     def _extract_entities_relations(self, text: str) -> Dict:
         prompt = PromptTemplate.from_template(
             """Extract key entities and their relationships from the following text:
@@ -131,9 +136,10 @@ class KnowledgeGraphManager:
 
         try:
             response = self.llm.invoke(prompt.format(text=text))
-            print(f"\nLLM Raw Response: {response.content}")
+            print(f"LLM Raw Response: {response.content}")
             
             try:
+                #LLM Response 清理
                 content = response.content.strip()
                 if content.startswith("```json"):
                     content = content[7:]
@@ -146,6 +152,7 @@ class KnowledgeGraphManager:
                 print(f"Cleaned content: {content}")
                 
                 result = json.loads(content)
+                
                 # Validate result format
                 if not isinstance(result, dict):
                     print("LLM response is not a valid JSON")
@@ -189,9 +196,11 @@ class KnowledgeGraphManager:
             print(f"Error calling LLM: {str(e)}")
             return {"entities": [], "relations": []}
 
+    #生成問題 *5
     def generate_questions(self, num_questions: int = 5) -> List[str]:
         print("Start Generating questions...")
 
+        #Check concept節點數量
         with self.driver.session() as session:
             check_query = """
                 MATCH (c:Concept)
@@ -204,6 +213,7 @@ class KnowledgeGraphManager:
                 print("Empty Knowledge Graph")
                 return []
                 
+            #從graph選出最多 10 條 (Concept)-[RELATES_TO]->(Concept) 關係
             query = """
                 MATCH (c1:Concept)-[r:RELATES_TO]->(c2:Concept)
                 RETURN c1.name as source, c2.name as target, r.type as relation
@@ -246,11 +256,7 @@ class KnowledgeGraphManager:
                     relationships=relationships_text
                 ))
                 
-                questions = [q.strip() for q in response.content.split('\n') if q.strip()]
-                print(f"Generated Questions：")
-                for i, q in enumerate(questions, 1):
-                    print(f"{i}. {q}")
-                    
+                questions = [q.strip() for q in response.content.split('\n') if q.strip()] #strip()：移除空格&換行符                    
                 return questions
                     
             except Exception as e:

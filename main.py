@@ -13,16 +13,17 @@ def main(pdf_path):
     )
     
     try:
+        #先建立 KG
         kg_manager.create_constraints()
         print("Create knowledge graph")
         result = process_single_query("", pdf_path)  
-        if result and result.get("contexts"):
-            chunks = [{"content": ctx, "metadata": {"source": pdf_path}} for ctx in result["contexts"]]
+        if result and result.get("Referenced contexts"):
+            chunks = [{"content": ctx, "metadata": {"source": pdf_path}} for ctx in result["Referenced contexts"]]
             kg_manager.create_knowledge_graph(chunks)
             print("Finished create knowledge graph")
         else:
             print("Please check pdf.")
-            # return
+            return
 
         query = input("User Query: ").strip()
         
@@ -31,9 +32,9 @@ def main(pdf_path):
             result = process_single_query(query, pdf_path)
             if result:
                 print("RAG Response：", result["content"])
-                if result["contexts"]:
+                if result["Referenced contexts"]:
                     print("Referenced contexts：")
-                    for ctx in result["contexts"]:
+                    for ctx in result["Referenced contexts"]:
                         print("-", ctx)
             else:
                 print("RAG Error")
@@ -43,7 +44,7 @@ def main(pdf_path):
             if questions:
                 print("Generated Questions：")
                 for i, q in enumerate(questions, 1):
-                    print(f"{i}. {q}")
+                    print(f"{q}")
             else:
                 print("Questions Generation Error")
                 

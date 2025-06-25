@@ -23,6 +23,7 @@ chat_client = ChatOpenAI(
 
 def process_single_query(query, pdf_path):
     try:
+        #PDF name 作為 DB name 存在 ./chroma_db 路徑下
         db_name = os.path.splitext(os.path.basename(pdf_path))[0]
         persist_directory = f"./chroma_db/{db_name}"
         
@@ -32,6 +33,7 @@ def process_single_query(query, pdf_path):
             is_persistent=True
         )
 
+        #Chroma local DB
         vector_store = Chroma(
             collection_name=db_name,
             embedding_function=embeddings,
@@ -39,8 +41,10 @@ def process_single_query(query, pdf_path):
             client_settings=chroma_settings
         )
 
-        if vector_store._collection.count() == 0:
-            # PDF解析
+        if vector_store._collection.count() == 0: #If DB 是空的
+            
+            # Docling PDF解析，切成chunks，預設依照 token 限制切分
+            # Docling layout chunking + tokenizer max tokens (sentence-transformers/all-MiniLM-L6-v2 model) -> 512 tokens
             loader = DoclingLoader(
                 file_path=pdf_path,
                 export_type=ExportType.DOC_CHUNKS,
@@ -48,6 +52,8 @@ def process_single_query(query, pdf_path):
             docs = loader.load()
             
             all_chunks = []
+            
+            #chunk's content & metadata(source, page)
             for doc in docs:
                 chunk = doc.page_content #Finished Docling chunking's chunk content                
                 metadata = {
@@ -68,14 +74,19 @@ def process_single_query(query, pdf_path):
         else:
             print("Indexed before, using existing vectors")
 
+        #如果DB不是空的，可以直接檢索
+        #vector search
         retriever_mmr = vector_store.as_retriever(
-            search_type="mmr",
+            search_type="mmr", #Maximal Marginal Relevance 演算法，平衡相關性和多樣性
             search_kwargs={
                 "k": 3,
-                "fetch_k": 20,
-                "lambda_mult": 0.7
+                "fetch_k": 20, #候選chunks中去選
+                "lambda_mult": 0.7 #0.7 查詢相似度，0.3 看候選 k 間的差異度
             }
         )
+        
+        #keyword search
+        #Chroma 撈出 chunk text -> Document (all docs) 來檢索
         all_docs = []
         results = vector_store.get()
         if results and 'documents' in results:
@@ -85,17 +96,19 @@ def process_single_query(query, pdf_path):
                     page_content=text,
                     metadata=metadata
                 ))
-
+        
         bm25_retriever = BM25Retriever.from_documents(all_docs)
         bm25_retriever.k = 3
 
-        # Hybrid: MMR + BM25
+        # Hybrid: MMR(vector) + BM25(keyword) 先各取出3筆結果->結果合併->根據相關性分數與加權排序
+        # Chunk 總分 = BM25_score × 0.5 + MMR_score × 0.5
         hybrid_retriever = EnsembleRetriever(
             retrievers=[bm25_retriever, retriever_mmr],
             weights=[0.5, 0.5]  
         )
 
-        retrieved_docs = hybrid_retriever.invoke(query)
+        # 加權總分，排序 & 挑前 3 chunk
+        retrieved_docs = hybrid_retriever.invoke(query)[:3]
         contexts = [doc.page_content for doc in retrieved_docs]
 
         # Generation
@@ -139,7 +152,12 @@ def process_single_query(query, pdf_path):
 
 
 if __name__ == "__main__":
-    query = "Does Docling contain OCR?"
+    query = "Docling 是如何辨識 table 的結構?" 
     pdf_path = "2408.09869v5.pdf"
     result = process_single_query(query, pdf_path)
-    print(result['content'])
+    print("Response: ", result['content'])
+    print("Referenced Contexts: ", result['Referenced contexts'])
+
+    #What is Table 1 about?
+    #跨頁內容 (有抓到contexts)
+    #Ensemble and rerank 怎麼選? 為什麼不選rerank?

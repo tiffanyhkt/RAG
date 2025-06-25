@@ -56,3 +56,15 @@ python main.py
 ## Notes
 1. PDF 檔案路徑目前為：2401.13649v2.pdf，可自行替換成其他文件。
 2. 需確認 Neo4j DB 已啟動，並可從 bolt://localhost:7687 存取。
+
+
+
+## RAG flow
+---
+PDF → Docling Chunk → OpenAI Embedding → Chroma 向量庫
+                                 ↓          ↓
+        Hybrid Search: Vector search + BM25 關鍵字檢索器
+                                 ↓
+            → EnsembleRetriever 合併排序取 top 3
+                                 ↓
+                → GPT-4o 根據 chunk 回答使用者問題
