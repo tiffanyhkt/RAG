@@ -4,6 +4,10 @@ from langchain_core.prompts import PromptTemplate
 import os
 from typing import List, Dict
 import json
+from config import OPENAI_API_KEY
+
+#OpenAI API
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
 class KnowledgeGraphManager:
     def __init__(self, uri: str, user: str, password: str):

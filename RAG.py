@@ -21,7 +21,7 @@ chat_client = ChatOpenAI(
     temperature=0
 )
 
-def process_single_query(query, pdf_path):
+def process_query(query, pdf_path, chat_history):
     try:
         #PDF name 作為 DB name 存在 ./chroma_db 路徑下
         db_name = os.path.splitext(os.path.basename(pdf_path))[0]
@@ -84,7 +84,9 @@ def process_single_query(query, pdf_path):
                 "lambda_mult": 0.7 #0.7 查詢相似度，0.3 看候選 k 間的差異度
             }
         )
-        
+        #Distance: cosine similarity or 內積
+        #已選的東西和未選的distance(差異度)
+
         #keyword search
         #Chroma 撈出 chunk text -> Document (all docs) 來檢索
         all_docs = []
@@ -98,14 +100,15 @@ def process_single_query(query, pdf_path):
                 ))
         
         bm25_retriever = BM25Retriever.from_documents(all_docs)
-        bm25_retriever.k = 3
+        bm25_retriever.k = 3 
 
         # Hybrid: MMR(vector) + BM25(keyword) 先各取出3筆結果->結果合併->根據相關性分數與加權排序
-        # Chunk 總分 = BM25_score × 0.5 + MMR_score × 0.5
+        # Chunk 總分 = BM25_score × 0.5 + MMR_score × 0.5 => (X) score 要先normalized 在做 a & b 係數調配  or 使用RRF
         hybrid_retriever = EnsembleRetriever(
             retrievers=[bm25_retriever, retriever_mmr],
             weights=[0.5, 0.5]  
         )
+        #建議用RRF或是自己去調配 a & b
 
         # 加權總分，排序 & 挑前 3 chunk
         retrieved_docs = hybrid_retriever.invoke(query)[:3]
@@ -133,7 +136,8 @@ def process_single_query(query, pdf_path):
                 Current timestamp:{current_time}'''},
             {
                 "role": "system",
-                "content": f'''Retrieved Context (SELECTED FILES):\n {contexts}'''},
+                "content": f'''Retrieved Context (SELECTED FILES):\n {contexts}'''},] 
+                + chat_history + [
             {
                 "role": "user", 
                 "content": query
@@ -152,11 +156,26 @@ def process_single_query(query, pdf_path):
 
 
 if __name__ == "__main__":
-    query = "Docling 是如何辨識 table 的結構?" 
+    # query = "Docling 是如何辨識 table 的結構?" 
     pdf_path = "2408.09869v5.pdf"
-    result = process_single_query(query, pdf_path)
-    print("Response: ", result['content'])
-    print("Referenced Contexts: ", result['Referenced contexts'])
+    chat_history = []
+    
+    print("Conversation starts:")
+    while True:
+        query = input("User Query: ")
+        if query.lower() in ["exit", "quit", "q"]:
+                print("Conversation ends")
+                break
+        
+        result = process_query(query, pdf_path, chat_history)
+        if result:
+            print("Response: ", result['content'])
+            print("Referenced Contexts: ", result['Referenced contexts'])
+            chat_history.append({"role": "user", "content": query})
+            chat_history.append({"role": "assistant", "content": result['content']})
+        else:
+            print("Failed to generate response, please try again.")
+
 
     #What is Table 1 about?
     #跨頁內容 (有抓到contexts)

@@ -34,7 +34,7 @@ pip install -r requirements.txt
 在你的 main.py 或 .env 檔案中加入：
 、、、
 os.environ["OPENAI_API_KEY"] = "<your-openai-api-key>"
-、、、
+、、、 (半形)
 
 4. **Update Neo4j credentials in main.py**
 、、、
@@ -61,6 +61,8 @@ python main.py
 
 ## RAG flow
 ---
+```markdown
+
 PDF → Docling Chunk → OpenAI Embedding → Chroma 向量庫
                                  ↓          ↓
         Hybrid Search: Vector search + BM25 關鍵字檢索器
@@ -68,3 +70,5 @@ PDF → Docling Chunk → OpenAI Embedding → Chroma 向量庫
             → EnsembleRetriever 合併排序取 top 3
                                  ↓
                 → GPT-4o 根據 chunk 回答使用者問題
+
+```

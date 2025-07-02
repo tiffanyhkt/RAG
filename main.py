@@ -1,4 +1,4 @@
-from RAG import process_single_query
+from RAG import process_query
 from knowledge_graph import KnowledgeGraphManager
 from dotenv import load_dotenv
 import os
@@ -16,7 +16,7 @@ def main(pdf_path):
         #先建立 KG
         kg_manager.create_constraints()
         print("Create knowledge graph")
-        result = process_single_query("", pdf_path)  
+        result = process_query("", pdf_path, chat_history)  
         if result and result.get("Referenced contexts"):
             chunks = [{"content": ctx, "metadata": {"source": pdf_path}} for ctx in result["Referenced contexts"]]
             kg_manager.create_knowledge_graph(chunks)
@@ -25,28 +25,33 @@ def main(pdf_path):
             print("Please check pdf.")
             return
 
-        query = input("User Query: ").strip()
-        
-        if query:
-            # RAG
-            result = process_single_query(query, pdf_path)
-            if result:
-                print("RAG Response：", result["content"])
-                if result["Referenced contexts"]:
-                    print("Referenced contexts：")
-                    for ctx in result["Referenced contexts"]:
-                        print("-", ctx)
+        chat_history = []
+        print("Conversation starts:")
+        while True:
+            query = input("User Query: ")
+            if query.lower() in ["exit", "quit", "q"]:
+                    print("Conversation ends")
+                    break
+            
+            if query != None:
+                # RAG
+                result = process_query(query, pdf_path, chat_history)
+                if result:
+                    print("RAG Response：", result["content"])
+                    # print("Referenced Contexts: ", result['Referenced contexts'])
+                    chat_history.append({"role": "user", "content": query})
+                    chat_history.append({"role": "assistant", "content": result['content']})
+                else:
+                    print("RAG Error. Failed to generate response, please try again.")
             else:
-                print("RAG Error")
-        else:
-            # 使用 KG 生成問題
-            questions = kg_manager.generate_questions(num_questions=5)
-            if questions:
-                print("Generated Questions：")
-                for i, q in enumerate(questions, 1):
-                    print(f"{q}")
-            else:
-                print("Questions Generation Error")
+                # 使用 KG 生成問題
+                questions = kg_manager.generate_questions(num_questions=5)
+                if questions:
+                    print("Generated Questions：")
+                    for i, q in enumerate(questions, 1):
+                        print(f"{q}")
+                else:
+                    print("Questions Generation Error")
                 
     except Exception as e:
         print(f"Error：{str(e)}")

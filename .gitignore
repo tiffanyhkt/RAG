@@ -1,3 +1,4 @@
 config.py
 test.ipynb
-__pycache__
+__pycache__/
+chroma_db/
